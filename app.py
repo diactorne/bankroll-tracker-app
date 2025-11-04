@@ -33,7 +33,7 @@ class BankrollTracker:
 
         if os.path.exists(FICHIER_DATA):
             try:
-                df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'])
+                df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'], encoding='utf-8')
                 if not df_temp.empty:
                     self.df = df_temp
                 else:
@@ -310,4 +310,5 @@ def main():
 
 
 if __name__ == '__main__':
+
     main()
