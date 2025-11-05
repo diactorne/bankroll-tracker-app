@@ -8,7 +8,7 @@ import numpy as np
 
 # --- CONFIGURATION ---
 FICHIER_DATA = 'bankroll_data.csv'
-BANKROLL_INIT = 0.00
+BANKROLL_INIT = 00.00
 
 # Configuration de la page Streamlit
 st.set_page_config(layout="wide", page_title="💰 Suivi de Bankroll - Bet Tracker")
@@ -341,6 +341,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
