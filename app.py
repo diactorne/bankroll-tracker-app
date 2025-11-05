@@ -66,7 +66,7 @@ class BankrollTracker:
         """Crée un DataFrame vierge avec la ligne d'initialisation."""
         self.df = pd.DataFrame(columns=[
             'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
-            'Gain_Net', 'Bankroll_Finale', 'Détailles du paris'
+            'Gain_Net', 'Bankroll_Finale', 'Détailles_du_paris'
         ])
         self.df.loc[0] = [
             datetime.now().strftime('%Y-%m-%d'), 
@@ -117,7 +117,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': date_str, 'Type': 'Pari', 'Montant_Pari': montant_pari, 
             'Cote': cote, 'Résultat': resultat, 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Sport': sport
+            'Bankroll_Finale': nouvelle_bankroll, 'Détailles_du_paris': Détailles_du_paris
         })
 
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -137,7 +137,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': datetime.now().strftime('%Y-%m-%d'), 'Type': type_operation, 
             'Montant_Pari': 0.0, 'Cote': 0.0, 'Résultat': 'N/A', 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Sport': 'N/A'
+            'Bankroll_Finale': nouvelle_bankroll, 'Détailles_du_paris': 'N/A'
         })
         
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -325,5 +325,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
