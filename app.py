@@ -8,7 +8,7 @@ import numpy as np
 
 # --- CONFIGURATION ---
 FICHIER_DATA = 'bankroll_data.csv'
-BANKROLL_INIT = 1000.00
+BANKROLL_INIT = 0.00
 
 # Configuration de la page Streamlit
 st.set_page_config(layout="wide", page_title="💰 Suivi de Bankroll - Bet Tracker")
@@ -41,7 +41,7 @@ class BankrollTracker:
 
         if os.path.exists(FICHIER_DATA):
             try:
-                # Tente de lire le fichier en utilisant l'encodage et le séparateur français
+                # Tente de lire le fichier en utilisant l'encodage et le séparateur potentiellement utilisés sur le serveur/local
                 df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'], encoding='utf-8', sep=';')
                 
                 # S'assurer que les colonnes critiques existent
@@ -332,11 +332,16 @@ def main():
         st.pyplot(tracker.creer_figure_graphique())
         
         st.markdown("### Historique des Transactions")
-        st.dataframe(tracker.df.tail(10), use_container_width=True)
+        
+        # Correction ici : Renommer la colonne dans le DataFrame à afficher
+        df_affichage = tracker.df.rename(columns={'Details_Pari': 'Détails du pari'})
+        
+        st.dataframe(df_affichage.tail(10), use_container_width=True)
 
 
 if __name__ == '__main__':
     main()
+
 
 
 
