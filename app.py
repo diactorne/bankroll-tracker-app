@@ -4,7 +4,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import streamlit as st 
 from matplotlib import dates as mdates
-import numpy as np # Ajout de numpy (pour le type float si besoin, bien que non strictement nécessaire ici)
+import numpy as np
 
 # --- CONFIGURATION ---
 FICHIER_DATA = 'bankroll_data.csv'
@@ -19,7 +19,6 @@ class BankrollTracker:
     
     def __init__(self, solde_initial):
         self.solde_initial = solde_initial
-        # L'initialisation doit être dans la session Streamlit pour la persistance
         self._charger_ou_initialiser_df() 
         
         if not self.df.empty:
@@ -34,28 +33,35 @@ class BankrollTracker:
         """
         self.df = pd.DataFrame() 
 
+        # Définition des noms de colonnes attendus pour la vérification
+        COLONNES_ATTENDUES = [
+            'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
+            'Gain_Net', 'Bankroll_Finale', 'Details_Pari' # Changé de 'Sport'
+        ]
+
         if os.path.exists(FICHIER_DATA):
             try:
-                # Tente de lire le fichier en utilisant l'encodage et le séparateur potentiellement utilisés sur le serveur/local
+                # Tente de lire le fichier en utilisant l'encodage et le séparateur français
                 df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'], encoding='utf-8', sep=';')
                 
-                # Vérification de base pour s'assurer que les colonnes nécessaires existent
-                if not df_temp.empty and 'Date' in df_temp.columns and 'Bankroll_Finale' in df_temp.columns:
-                    self.df = df_temp
+                # S'assurer que les colonnes critiques existent
+                if not df_temp.empty and all(col in df_temp.columns for col in ['Date', 'Bankroll_Finale', 'Details_Pari']):
+                    # Renommer l'ancienne colonne 'Sport' en 'Details_Pari' si elle existe encore (pour l'héritage)
+                    if 'Sport' in df_temp.columns and 'Details_Pari' not in df_temp.columns:
+                        df_temp.rename(columns={'Sport': 'Details_Pari'}, inplace=True)
+                        
+                    # Filtrer/réordonner les colonnes si nécessaire
+                    self.df = df_temp[COLONNES_ATTENDUES].copy()
                 else:
-                    # Si le fichier est vide ou les colonnes critiques manquent, on initialise
                     self._creer_df_initial()
                     
             except Exception as e:
-                # Si n'importe quelle erreur de format survient (Unicode, colonne, séparateur, etc.), on réinitialise.
-                # Ceci est la correction pour toutes les erreurs que vous avez rencontrées (UnicodeDecodeError, ValueError)
                 print(f"Erreur de lecture du CSV: {e}. Réinitialisation du DataFrame.")
                 self._creer_df_initial()
         else:
-            # Si le fichier n'existe pas du tout
             self._creer_df_initial()
         
-        # S'assurer que la première ligne est la ligne DEBUT (solde initial)
+        # S'assurer que la première ligne est la ligne DEBUT
         if self.df.empty or self.df.iloc[0]['Type'] != 'DEBUT':
              self._creer_df_initial() 
              
@@ -66,7 +72,7 @@ class BankrollTracker:
         """Crée un DataFrame vierge avec la ligne d'initialisation."""
         self.df = pd.DataFrame(columns=[
             'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
-            'Gain_Net', 'Bankroll_Finale', 'Détailles_du_paris'
+            'Gain_Net', 'Bankroll_Finale', 'Details_Pari' # Changé de 'Sport'
         ])
         self.df.loc[0] = [
             datetime.now().strftime('%Y-%m-%d'), 
@@ -99,7 +105,8 @@ class BankrollTracker:
         # On sauvegarde toujours avec le point-virgule car c'est ce que le code essaie de lire.
         self.df.to_csv(FICHIER_DATA, index=False, sep=';', encoding='utf-8')
 
-    def ajouter_pari(self, date_str, montant_pari, cote, resultat, sport="Général"):
+    # 'details_pari' remplace 'sport'
+    def ajouter_pari(self, date_str, montant_pari, cote, resultat, details_pari="Général"): 
         """Ajoute une nouvelle transaction de type 'Pari'."""
         
         if resultat not in ['Gagné', 'Perdu', 'Annulé']:
@@ -117,7 +124,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': date_str, 'Type': 'Pari', 'Montant_Pari': montant_pari, 
             'Cote': cote, 'Résultat': resultat, 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Détailles_du_paris': Détailles_du_paris
+            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': details_pari # Changé de 'Sport'
         })
 
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -137,7 +144,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': datetime.now().strftime('%Y-%m-%d'), 'Type': type_operation, 
             'Montant_Pari': 0.0, 'Cote': 0.0, 'Résultat': 'N/A', 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Détailles_du_paris': 'N/A'
+            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': 'N/A' # Changé de 'Sport'
         })
         
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -232,13 +239,14 @@ def display_stats(tracker):
     else:
         st.info(f"Bankroll Actuelle: {tracker.bankroll_actuelle:.2f} € - Ajoutez un premier pari!")
 
+# Mise à jour de la fonction pour utiliser le nouveau nom
 def add_pari(tracker, form_data):
     """Gère l'ajout d'un pari depuis le formulaire."""
     try:
         date_str = form_data['date']
         montant = float(form_data['montant'])
         cote = float(form_data['cote'])
-        sport = form_data['sport']
+        details_pari = form_data['details_pari'] # Changé de 'sport'
         resultat = form_data['resultat']
         
         datetime.strptime(date_str, '%Y-%m-%d')
@@ -247,7 +255,7 @@ def add_pari(tracker, form_data):
             st.error("Montant ou cote invalide (doivent être positifs et cote >= 1.0).")
             return
 
-        tracker.ajouter_pari(date_str, montant, cote, resultat, sport)
+        tracker.ajouter_pari(date_str, montant, cote, resultat, details_pari) # Changé de 'sport'
         st.success("Pari enregistré avec succès ! L'application se rafraîchit...")
         
         st.experimental_rerun() 
@@ -280,7 +288,10 @@ def main():
             date_pari = st.date_input("Date du Pari", datetime.now(), format="YYYY-MM-DD").strftime('%Y-%m-%d')
             montant = st.number_input("Montant Parié (€)", min_value=0.01, format="%.2f", step=1.0)
             cote = st.number_input("Cote", min_value=1.00, format="%.2f", step=0.01)
-            sport = st.text_input("Sport", value="Général")
+            
+            # Ligne modifiée : "Détails du pari" remplace "Sport"
+            details_pari = st.text_input("Détails du pari", value="Général") 
+            
             resultat = st.selectbox("Résultat", ['Gagné', 'Perdu', 'Annulé'])
 
             submitted = st.form_submit_button("Enregistrer Pari")
@@ -288,7 +299,8 @@ def main():
             if submitted:
                 form_data = {
                     'date': date_pari, 'montant': montant, 'cote': cote,
-                    'sport': sport, 'resultat': resultat
+                    'details_pari': details_pari, # Changé de 'sport'
+                    'resultat': resultat
                 }
                 add_pari(tracker, form_data)
 
@@ -325,6 +337,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
