@@ -2,8 +2,9 @@ import pandas as pd
 import os
 from datetime import datetime
 import matplotlib.pyplot as plt
-import streamlit as st # Import de Streamlit
+import streamlit as st 
 from matplotlib import dates as mdates
+import numpy as np # Ajout de numpy (pour le type float si besoin, bien que non strictement nécessaire ici)
 
 # --- CONFIGURATION ---
 FICHIER_DATA = 'bankroll_data.csv'
@@ -15,7 +16,6 @@ st.set_page_config(layout="wide", page_title="💰 Suivi de Bankroll - Bet Track
 # --- CLASSE DE LOGIQUE (BankrollTracker) ---
 
 class BankrollTracker:
-    # La logique interne reste globalement la même pour la gestion des données
     
     def __init__(self, solde_initial):
         self.solde_initial = solde_initial
@@ -28,25 +28,39 @@ class BankrollTracker:
             self.bankroll_actuelle = solde_initial
 
     def _charger_ou_initialiser_df(self):
-        """Charge le DataFrame existant ou en crée un nouveau."""
+        """
+        Charge le DataFrame existant avec gestion d'erreurs (encodage/séparateur) 
+        ou en crée un nouveau si la lecture échoue.
+        """
         self.df = pd.DataFrame() 
 
         if os.path.exists(FICHIER_DATA):
             try:
+                # Tente de lire le fichier en utilisant l'encodage et le séparateur potentiellement utilisés sur le serveur/local
                 df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'], encoding='utf-8', sep=';')
-                if not df_temp.empty:
+                
+                # Vérification de base pour s'assurer que les colonnes nécessaires existent
+                if not df_temp.empty and 'Date' in df_temp.columns and 'Bankroll_Finale' in df_temp.columns:
                     self.df = df_temp
                 else:
+                    # Si le fichier est vide ou les colonnes critiques manquent, on initialise
                     self._creer_df_initial()
-            except pd.errors.EmptyDataError:
+                    
+            except Exception as e:
+                # Si n'importe quelle erreur de format survient (Unicode, colonne, séparateur, etc.), on réinitialise.
+                # Ceci est la correction pour toutes les erreurs que vous avez rencontrées (UnicodeDecodeError, ValueError)
+                print(f"Erreur de lecture du CSV: {e}. Réinitialisation du DataFrame.")
                 self._creer_df_initial()
         else:
+            # Si le fichier n'existe pas du tout
             self._creer_df_initial()
         
+        # S'assurer que la première ligne est la ligne DEBUT (solde initial)
         if self.df.empty or self.df.iloc[0]['Type'] != 'DEBUT':
              self._creer_df_initial() 
              
         self.calculer_bankroll_historique(self.solde_initial)
+
 
     def _creer_df_initial(self):
         """Crée un DataFrame vierge avec la ligne d'initialisation."""
@@ -81,8 +95,9 @@ class BankrollTracker:
 
 
     def _sauvegarder(self):
-        """Sauvegarde le DataFrame dans un fichier CSV."""
-        self.df.to_csv(FICHIER_DATA, index=False)
+        """Sauvegarde le DataFrame dans un fichier CSV. Utilise le point-virgule comme séparateur pour la compatibilité française."""
+        # On sauvegarde toujours avec le point-virgule car c'est ce que le code essaie de lire.
+        self.df.to_csv(FICHIER_DATA, index=False, sep=';', encoding='utf-8')
 
     def ajouter_pari(self, date_str, montant_pari, cote, resultat, sport="Général"):
         """Ajoute une nouvelle transaction de type 'Pari'."""
@@ -141,6 +156,7 @@ class BankrollTracker:
         total_mises = paris_df['Montant_Pari'].sum()
         profit_total = paris_df['Gain_Net'].sum()
         
+        # Gestion de la division par zéro si total_mises est 0
         roi_pour_paris = (profit_total / total_mises) * 100 if total_mises > 0 else 0.0
 
         paris_gagnes = len(paris_df[paris_df['Résultat'] == 'Gagné'])
@@ -166,6 +182,7 @@ class BankrollTracker:
         df_plot = self.df.copy()
         df_plot['Date'] = pd.to_datetime(df_plot['Date']) 
         
+        # Agréger les données par jour : un seul point par jour
         daily_bankroll = df_plot.set_index('Date')['Bankroll_Finale'].resample('D').last().ffill()
         
         if not daily_bankroll.empty:
@@ -175,7 +192,7 @@ class BankrollTracker:
             ax.set_ylabel('Solde (€)', fontsize=10)
             ax.grid(True, linestyle='--', alpha=0.6)
             
-            # Correction de l'affichage des dates
+            # Correction de l'affichage des dates pour éviter le chevauchement
             date_fmt = mdates.DateFormatter('%d-%m') 
             ax.xaxis.set_major_formatter(date_fmt)
             locator = mdates.AutoDateLocator()
@@ -202,7 +219,6 @@ def display_stats(tracker):
     st.markdown("### 📊 Statistiques Actuelles")
     
     if stats:
-        # Affichage en deux colonnes pour être plus compact
         col_s1, col_s2, col_s3 = st.columns(3)
         col_s1.metric("Solde Actuel", stats['Solde Actuel'])
         col_s2.metric("Profit Net (paris)", stats['Profit Net (paris)'])
@@ -234,7 +250,6 @@ def add_pari(tracker, form_data):
         tracker.ajouter_pari(date_str, montant, cote, resultat, sport)
         st.success("Pari enregistré avec succès ! L'application se rafraîchit...")
         
-        # Streamlit a besoin d'être relancé pour mettre à jour les colonnes/graphiques
         st.experimental_rerun() 
 
     except ValueError as e:
@@ -247,12 +262,10 @@ def add_pari(tracker, form_data):
 def main():
     """Fonction principale Streamlit."""
     
-    # Utilisation du cache pour éviter de recharger le CSV à chaque interaction
     tracker = load_tracker()
 
     st.title("💰 Suivi de Bankroll - Bet Tracker")
     
-    # Division de l'interface en deux colonnes
     col_controle, col_visualisation = st.columns([1, 2])
 
     # --- COLONNE DE CONTRÔLE (FORMULAIRES) ---
@@ -263,6 +276,7 @@ def main():
         with st.form("form_pari", clear_on_submit=True):
             st.subheader("Ajouter un Pari")
             
+            # Assurez-vous que la date est au format AAAA-MM-JJ
             date_pari = st.date_input("Date du Pari", datetime.now(), format="YYYY-MM-DD").strftime('%Y-%m-%d')
             montant = st.number_input("Montant Parié (€)", min_value=0.01, format="%.2f", step=1.0)
             cote = st.number_input("Cote", min_value=1.00, format="%.2f", step=0.01)
@@ -310,6 +324,5 @@ def main():
 
 
 if __name__ == '__main__':
-
     main()
 
