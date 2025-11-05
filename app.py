@@ -8,7 +8,8 @@ import numpy as np
 
 # --- CONFIGURATION ---
 FICHIER_DATA = 'bankroll_data.csv'
-BANKROLL_INIT = 1000.00
+BANKROLL_INIT = 0.00  # MODIFICATION ICI : Bankroll initiale fixée à 0.00
+# FICHIER_DATA est toujours utilisé ici, mais sera remplacé par la base de données dans la prochaine étape.
 
 # Configuration de la page Streamlit
 st.set_page_config(layout="wide", page_title="💰 Suivi de Bankroll - Bet Tracker")
@@ -36,21 +37,26 @@ class BankrollTracker:
         # Définition des noms de colonnes attendus pour la vérification
         COLONNES_ATTENDUES = [
             'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
-            'Gain_Net', 'Bankroll_Finale', 'Details_Pari' # Changé de 'Sport'
+            'Gain_Net', 'Bankroll_Finale', 'Details_Pari' 
         ]
 
         if os.path.exists(FICHIER_DATA):
             try:
-                # Tente de lire le fichier en utilisant l'encodage et le séparateur potentiellement utilisés sur le serveur/local
+                # Tente de lire le fichier en utilisant l'encodage et le séparateur français
                 df_temp = pd.read_csv(FICHIER_DATA, parse_dates=['Date'], encoding='utf-8', sep=';')
                 
                 # S'assurer que les colonnes critiques existent
-                if not df_temp.empty and all(col in df_temp.columns for col in ['Date', 'Bankroll_Finale', 'Details_Pari']):
-                    # Renommer l'ancienne colonne 'Sport' en 'Details_Pari' si elle existe encore (pour l'héritage)
+                if not df_temp.empty and all(col in df_temp.columns for col in ['Date', 'Bankroll_Finale']):
+                    
+                    # Gérer les anciens noms de colonne ('Sport')
                     if 'Sport' in df_temp.columns and 'Details_Pari' not in df_temp.columns:
                         df_temp.rename(columns={'Sport': 'Details_Pari'}, inplace=True)
-                        
-                    # Filtrer/réordonner les colonnes si nécessaire
+                    
+                    # Vérifier que la colonne Details_Pari existe après renommage/chargement
+                    if 'Details_Pari' not in df_temp.columns:
+                        df_temp['Details_Pari'] = 'N/A' # Ajout de la colonne si elle n'existe pas
+
+                    # Filtrer/réordonner les colonnes
                     self.df = df_temp[COLONNES_ATTENDUES].copy()
                 else:
                     self._creer_df_initial()
@@ -61,7 +67,8 @@ class BankrollTracker:
         else:
             self._creer_df_initial()
         
-        # S'assurer que la première ligne est la ligne DEBUT
+        # S'assurer que la première ligne est la ligne DEBUT (et la seule ligne si le solde initial est 0)
+        # La condition est modifiée pour permettre une bankroll initiale de 0
         if self.df.empty or self.df.iloc[0]['Type'] != 'DEBUT':
              self._creer_df_initial() 
              
@@ -72,7 +79,7 @@ class BankrollTracker:
         """Crée un DataFrame vierge avec la ligne d'initialisation."""
         self.df = pd.DataFrame(columns=[
             'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
-            'Gain_Net', 'Bankroll_Finale', 'Details_Pari' # Changé de 'Sport'
+            'Gain_Net', 'Bankroll_Finale', 'Details_Pari'
         ])
         self.df.loc[0] = [
             datetime.now().strftime('%Y-%m-%d'), 
@@ -96,16 +103,15 @@ class BankrollTracker:
 
             self.bankroll_actuelle = self.df['Bankroll_Finale'].iloc[-1]
         else:
+            # Si la ligne DEBUT est perdue, on repart du solde initial fixé à 0
             self.df['Bankroll_Finale'] = solde_initial + self.df['Gain_Net'].cumsum()
             self.bankroll_actuelle = self.df['Bankroll_Finale'].iloc[-1]
 
 
     def _sauvegarder(self):
-        """Sauvegarde le DataFrame dans un fichier CSV. Utilise le point-virgule comme séparateur pour la compatibilité française."""
-        # On sauvegarde toujours avec le point-virgule car c'est ce que le code essaie de lire.
+        """Sauvegarde le DataFrame dans un fichier CSV. Utilise le point-virgule comme séparateur."""
         self.df.to_csv(FICHIER_DATA, index=False, sep=';', encoding='utf-8')
 
-    # 'details_pari' remplace 'sport'
     def ajouter_pari(self, date_str, montant_pari, cote, resultat, details_pari="Général"): 
         """Ajoute une nouvelle transaction de type 'Pari'."""
         
@@ -124,7 +130,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': date_str, 'Type': 'Pari', 'Montant_Pari': montant_pari, 
             'Cote': cote, 'Résultat': resultat, 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': details_pari # Changé de 'Sport'
+            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': details_pari
         })
 
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -144,7 +150,7 @@ class BankrollTracker:
         nouvelle_entree = pd.Series({
             'Date': datetime.now().strftime('%Y-%m-%d'), 'Type': type_operation, 
             'Montant_Pari': 0.0, 'Cote': 0.0, 'Résultat': 'N/A', 'Gain_Net': gain_net, 
-            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': 'N/A' # Changé de 'Sport'
+            'Bankroll_Finale': nouvelle_bankroll, 'Details_Pari': 'N/A'
         })
         
         self.df.loc[len(self.df)] = nouvelle_entree
@@ -163,7 +169,6 @@ class BankrollTracker:
         total_mises = paris_df['Montant_Pari'].sum()
         profit_total = paris_df['Gain_Net'].sum()
         
-        # Gestion de la division par zéro si total_mises est 0
         roi_pour_paris = (profit_total / total_mises) * 100 if total_mises > 0 else 0.0
 
         paris_gagnes = len(paris_df[paris_df['Résultat'] == 'Gagné'])
@@ -180,16 +185,13 @@ class BankrollTracker:
         return stats
 
     def creer_figure_graphique(self):
-        """
-        Crée la figure Matplotlib pour le graphique d'évolution.
-        """
+        """Crée la figure Matplotlib pour le graphique d'évolution."""
         
         fig, ax = plt.subplots(figsize=(8, 4))
         
         df_plot = self.df.copy()
         df_plot['Date'] = pd.to_datetime(df_plot['Date']) 
         
-        # Agréger les données par jour : un seul point par jour
         daily_bankroll = df_plot.set_index('Date')['Bankroll_Finale'].resample('D').last().ffill()
         
         if not daily_bankroll.empty:
@@ -199,7 +201,6 @@ class BankrollTracker:
             ax.set_ylabel('Solde (€)', fontsize=10)
             ax.grid(True, linestyle='--', alpha=0.6)
             
-            # Correction de l'affichage des dates pour éviter le chevauchement
             date_fmt = mdates.DateFormatter('%d-%m') 
             ax.xaxis.set_major_formatter(date_fmt)
             locator = mdates.AutoDateLocator()
@@ -216,11 +217,11 @@ class BankrollTracker:
 
 @st.cache_resource
 def load_tracker():
-    """Charge le tracker et le met en cache pour qu'il ne soit chargé qu'une seule fois."""
+    """Charge le tracker et le met en cache."""
     return BankrollTracker(solde_initial=BANKROLL_INIT)
 
 def display_stats(tracker):
-    """Affiche les statistiques dans la colonne de visualisation."""
+    """Affiche les statistiques."""
     stats = tracker.calculer_statistiques()
     
     st.markdown("### 📊 Statistiques Actuelles")
@@ -237,16 +238,15 @@ def display_stats(tracker):
         col_s6.metric("Taux de Réussite", stats['Taux de Réussite'])
 
     else:
-        st.info(f"Bankroll Actuelle: {tracker.bankroll_actuelle:.2f} € - Ajoutez un premier pari!")
+        st.info(f"Bankroll Actuelle: {tracker.bankroll_actuelle:.2f} € - Ajoutez un premier pari ou effectuez un dépôt!")
 
-# Mise à jour de la fonction pour utiliser le nouveau nom
 def add_pari(tracker, form_data):
     """Gère l'ajout d'un pari depuis le formulaire."""
     try:
         date_str = form_data['date']
         montant = float(form_data['montant'])
         cote = float(form_data['cote'])
-        details_pari = form_data['details_pari'] # Changé de 'sport'
+        details_pari = form_data['details_pari']
         resultat = form_data['resultat']
         
         datetime.strptime(date_str, '%Y-%m-%d')
@@ -255,7 +255,7 @@ def add_pari(tracker, form_data):
             st.error("Montant ou cote invalide (doivent être positifs et cote >= 1.0).")
             return
 
-        tracker.ajouter_pari(date_str, montant, cote, resultat, details_pari) # Changé de 'sport'
+        tracker.ajouter_pari(date_str, montant, cote, resultat, details_pari)
         st.success("Pari enregistré avec succès ! L'application se rafraîchit...")
         
         st.experimental_rerun() 
@@ -284,12 +284,11 @@ def main():
         with st.form("form_pari", clear_on_submit=True):
             st.subheader("Ajouter un Pari")
             
-            # Assurez-vous que la date est au format AAAA-MM-JJ
             date_pari = st.date_input("Date du Pari", datetime.now(), format="YYYY-MM-DD").strftime('%Y-%m-%d')
             montant = st.number_input("Montant Parié (€)", min_value=0.01, format="%.2f", step=1.0)
             cote = st.number_input("Cote", min_value=1.00, format="%.2f", step=0.01)
             
-            # Ligne modifiée : "Détails du pari" remplace "Sport"
+            # Affichage de l'input: "Détails du pari"
             details_pari = st.text_input("Détails du pari", value="Général") 
             
             resultat = st.selectbox("Résultat", ['Gagné', 'Perdu', 'Annulé'])
@@ -299,7 +298,7 @@ def main():
             if submitted:
                 form_data = {
                     'date': date_pari, 'montant': montant, 'cote': cote,
-                    'details_pari': details_pari, # Changé de 'sport'
+                    'details_pari': details_pari, 
                     'resultat': resultat
                 }
                 add_pari(tracker, form_data)
@@ -333,7 +332,8 @@ def main():
         
         st.markdown("### Historique des Transactions")
         
-        # Correction ici : Renommer la colonne dans le DataFrame à afficher
+        # CORRECTION DÉFINITIVE D'AFFICHAGE
+        # Renomme la colonne interne 'Details_Pari' vers le nom affiché 'Détails du pari'
         df_affichage = tracker.df.rename(columns={'Details_Pari': 'Détails du pari'})
         
         st.dataframe(df_affichage.tail(10), use_container_width=True)
@@ -341,6 +341,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
