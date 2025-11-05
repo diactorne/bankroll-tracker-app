@@ -66,7 +66,7 @@ class BankrollTracker:
         """Crée un DataFrame vierge avec la ligne d'initialisation."""
         self.df = pd.DataFrame(columns=[
             'Date', 'Type', 'Montant_Pari', 'Cote', 'Résultat', 
-            'Gain_Net', 'Bankroll_Finale', 'Sport'
+            'Gain_Net', 'Bankroll_Finale', 'Détailles du paris'
         ])
         self.df.loc[0] = [
             datetime.now().strftime('%Y-%m-%d'), 
@@ -325,4 +325,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
