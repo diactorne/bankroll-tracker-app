@@ -11,7 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials 
 
 # --- CONFIGURATION ---
-BANKROLL_INIT = 0.00 # Bankroll initiale à 0
+BANKROLL_INIT = 0.00 # Bankroll initiale fixée à 0.00
 # Définition des permissions d'accès (Lecture + Écriture)
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'] 
 
@@ -20,17 +20,18 @@ st.set_page_config(layout="wide", page_title="💰 Suivi de Bankroll - Bet Track
 
 # --- NOUVELLES FONCTIONS DE CONNEXION (HORS CLASSE) ---
 
-@st.cache_resource(ttl=3600) # Cache la connexion pendant 1h pour éviter les appels API abusifs
+@st.cache_resource(ttl=3600) # Cache la connexion pendant 1h
 def connect_to_sheets():
     """Établit la connexion à Google Sheets via le compte de service."""
     
     # 1. Vérifie la présence des secrets Streamlit
     if not st.secrets.get("gcp_service_account") or not st.secrets.get("SHEET_ID"):
+        # Cette erreur apparaîtra si l'Étape 2 de la configuration n'est pas faite.
         st.error("Les secrets de connexion Google Sheets (gcp_service_account et SHEET_ID) ne sont pas configurés. L'application ne peut pas enregistrer de données de manière persistante.")
         return None
 
     try:
-        # 2. Authentification
+        # 2. Authentification via les secrets
         secrets_dict = st.secrets["gcp_service_account"]
         credentials = Credentials.from_service_account_info(secrets_dict, scopes=SCOPES)
         client = gspread.authorize(credentials)
@@ -43,8 +44,7 @@ def connect_to_sheets():
         return spreadsheet.sheet1
         
     except Exception as e:
-        # Si une erreur se produit (mauvaise clé, ID de feuille incorrect), l'application s'arrête
-        st.error(f"Erreur fatale de connexion à Google Sheets : {e}. Vérifiez vos secrets et les permissions d'accès ('Éditeur') de l'email de service.")
+        st.error(f"Erreur fatale de connexion à Google Sheets : {e}. Vérifiez vos secrets Streamlit et les permissions d'accès ('Éditeur') de l'email de service.")
         return None
 
 
@@ -83,23 +83,24 @@ class BankrollTracker:
                 data = sheet.get_all_records(head=1)
                 df_temp = pd.DataFrame(data)
                 
+                # S'assurer que les en-têtes sont corrects
                 if not df_temp.empty and all(col in df_temp.columns for col in COLONNES_ATTENDUES):
                     
                     self.df = df_temp[COLONNES_ATTENDUES].copy()
                     
-                    # Conversion des colonnes numériques
+                    # Conversion des colonnes numériques (Sheets lit tout comme du texte)
                     for col in ['Montant_Pari', 'Cote', 'Gain_Net', 'Bankroll_Finale']:
-                        # Coerce pour gérer les valeurs non numériques (comme N/A ou vides)
                         self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0.0) 
                         
                 else:
                     self._creer_df_initial()
             else:
+                # Si la connexion Sheets a échoué, initialiser un DataFrame local (non persistant)
                 self.df = pd.DataFrame(columns=COLONNES_ATTENDUES)
-                self._creer_df_initial() # Initialise en cas d'échec de connexion
+                self._creer_df_initial() 
 
         except Exception as e:
-            st.error(f"Une erreur s'est produite lors de la lecture des données Sheets. Utilisation du DF initial. Détail: {e}")
+            st.warning(f"Alerte de lecture Sheets. Utilisation du DF initial. Détail: {e}")
             self.df = pd.DataFrame(columns=COLONNES_ATTENDUES)
             self._creer_df_initial() 
 
@@ -135,7 +136,7 @@ class BankrollTracker:
             
             self.df['Gain_Net_Cumule'] = self.df['Gain_Net'].cumsum()
             self.df['Bankroll_Finale'] = start_solde + self.df['Gain_Net_Cumule']
-            self.df.drop(columns=['Gain_Net_Cumule'], inplace=True, errors='ignore') # errors='ignore' pour éviter l'erreur si la colonne n'existe pas
+            self.df.drop(columns=['Gain_Net_Cumule'], inplace=True, errors='ignore')
 
             self.bankroll_actuelle = self.df['Bankroll_Finale'].iloc[-1]
         else:
@@ -151,7 +152,6 @@ class BankrollTracker:
             data_to_write = [self.df.columns.values.tolist()] + self.df.values.tolist()
             
             # Écrit les données dans la feuille (écrase le contenu existant)
-            # Utilisation de 'USER_ENTERED' pour que Sheets interprète les nombres comme des nombres
             sheet.clear()
             sheet.update(data_to_write, value_input_option='USER_ENTERED')
             return True
@@ -201,11 +201,63 @@ class BankrollTracker:
         self.bankroll_actuelle = nouvelle_bankroll
         return self._sauvegarder()
     
-    # ... (le reste de la classe et des fonctions utilitaires sont inchangés) ...
-    # Le reste du code (calculer_statistiques, creer_figure_graphique, display_stats, add_pari, main) 
-    # n'a pas besoin de modifications majeures, car il utilise les méthodes de la classe que nous avons mises à jour.
+    def calculer_statistiques(self):
+        """Calcule les statistiques clés de la bankroll et les retourne."""
+        paris_df = self.df[self.df['Type'] == 'Pari'].copy()
+
+        if paris_df.empty:
+            return None
+
+        total_paris = len(paris_df)
+        total_mises = paris_df['Montant_Pari'].sum()
+        profit_total = paris_df['Gain_Net'].sum()
+        
+        roi_pour_paris = (profit_total / total_mises) * 100 if total_mises > 0 else 0.0
+
+        paris_gagnes = len(paris_df[paris_df['Résultat'] == 'Gagné'])
+        taux_reussite = (paris_gagnes / total_paris) * 100
+
+        stats = {
+            "Solde Actuel": f"{self.bankroll_actuelle:.2f} €",
+            "Profit Net (paris)": f"{profit_total:.2f} €",
+            "Total des Paris": total_paris,
+            "Total Misé": f"{total_mises:.2f} €",
+            "ROI": f"{roi_pour_paris:.2f} %",
+            "Taux de Réussite": f"{taux_reussite:.2f} %"
+        }
+        return stats
+
+    def creer_figure_graphique(self):
+        """Crée la figure Matplotlib pour le graphique d'évolution."""
+        
+        fig, ax = plt.subplots(figsize=(8, 4))
+        
+        df_plot = self.df.copy()
+        df_plot['Date'] = pd.to_datetime(df_plot['Date']) 
+        
+        daily_bankroll = df_plot.set_index('Date')['Bankroll_Finale'].resample('D').last().ffill()
+        
+        if not daily_bankroll.empty:
+            ax.plot(daily_bankroll.index, daily_bankroll.values, marker='o', linestyle='-', color='blue', label='Bankroll')
+            ax.set_title('Évolution Quotidienne de la Bankroll', fontsize=14)
+            ax.set_xlabel('Date', fontsize=10)
+            ax.set_ylabel('Solde (€)', fontsize=10)
+            ax.grid(True, linestyle='--', alpha=0.6)
+            
+            date_fmt = mdates.DateFormatter('%d-%m') 
+            ax.xaxis.set_major_formatter(date_fmt)
+            locator = mdates.AutoDateLocator()
+            ax.xaxis.set_major_locator(locator)
+            fig.autofmt_xdate(rotation=45)
+            
+        else:
+             ax.text(0.5, 0.5, "Pas de données pour le graphique d'évolution.", 
+                     horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+
+        return fig
 
 # --- FONCTIONS UTILITAIRES STREAMLIT ---
+
 # @st.cache_resource def load_tracker(): est au-dessus
 
 def display_stats(tracker):
@@ -245,7 +297,7 @@ def add_pari(tracker, form_data):
 
         if tracker.ajouter_pari(date_str, montant, cote, resultat, details_pari):
             st.success("Pari enregistré avec succès ! L'application se rafraîchit...")
-            st.cache_resource.clear() # IMPORTANT: Vide le cache pour forcer la relecture des données Sheets
+            st.cache_resource.clear() # Vide le cache pour forcer la relecture des données Sheets
             st.experimental_rerun()
         else:
             st.error("Erreur de sauvegarde. Vérifiez votre connexion à Google Sheets.")
@@ -323,7 +375,7 @@ def main():
         
         st.markdown("### Historique des Transactions")
         
-        # Affichage du DataFrame avec la colonne renommée pour l'utilisateur
+        # Affichage du DataFrame avec la colonne renommée
         df_affichage = tracker.df.rename(columns={'Details_Pari': 'Détails du pari'})
         
         st.dataframe(df_affichage.tail(10), use_container_width=True)
@@ -331,6 +383,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
